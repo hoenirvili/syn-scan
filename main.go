@@ -58,7 +58,7 @@ const (
 	sizePseudoTCPHdr = unsafe.Sizeof(zeroPseudo)
 )
 
-func randomIPHdrBytes(srcAddr, destAddr net.IP) [20]byte {
+func randomIPHdrBytes(srcAddr, destAddr net.IP) [sizeIPHDR]byte {
 	ip := anyLocalIP()
 	versionAndIhl := byte(4)
 	versionAndIhl <<= 4
@@ -74,7 +74,7 @@ func randomIPHdrBytes(srcAddr, destAddr net.IP) [20]byte {
 		srcAddr:       *(*uint32)(unsafe.Pointer(&ip[0])),
 		destAddr:      *(*uint32)(unsafe.Pointer(&destAddr[0])),
 	}
-	payload := (*[20]byte)(unsafe.Pointer(&iphdr))
+	payload := (*[sizeIPHDR]byte)(unsafe.Pointer(&iphdr))
 	iphdr.checksum = htons(checksum(payload[:]))
 	return *payload
 }
@@ -145,7 +145,7 @@ const (
 	ack = byte(0x10)
 )
 
-func randomSynBytes(pseudo pseudotcphdr, port uint16) [20]byte {
+func randomSynBytes(pseudo pseudotcphdr, port uint16) [sizeTCPHdr]byte {
 	tcpheader := tcphdr{
 		srcPort: htons(uint16(rand.Intn(math.MaxUint16))),
 		dstPort: htons(port),
@@ -158,7 +158,7 @@ func randomSynBytes(pseudo pseudotcphdr, port uint16) [20]byte {
 	payloadSum := make([]byte, sz, sz)
 	payloadSum = append(payloadSum, pseudo.byte()...)
 	payloadSum = append(payloadSum, tcpheader.byte()...)
-	payload := (*[20]byte)(unsafe.Pointer(&tcpheader))
+	payload := (*[sizeTCPHdr]byte)(unsafe.Pointer(&tcpheader))
 	tcpheader.sum = htons(checksum(payloadSum))
 	return *payload
 }
@@ -197,7 +197,7 @@ func main() {
 	to := syscall.SockaddrInet4{Port: int(htons(port))}
 	dest := ipaddr.IP.To4()
 	copy(to.Addr[:], dest)
-	payload := make([]byte, 0, 40)
+	payload := make([]byte, 0, sizeIPHDR+sizeTCPHdr)
 	ipHeaderPayload := randomIPHdrBytes(src, dest)
 	payload = append(payload, ipHeaderPayload[:]...)
 
