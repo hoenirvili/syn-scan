@@ -33,20 +33,6 @@ func htonl(n uint32) uint32 {
 	return binary.BigEndian.Uint32((*[4]byte)(unsafe.Pointer(&n))[:])
 }
 
-func bytes4ToUint32(bytes []byte) uint32 {
-	if cap(bytes) != 4 {
-		panic("no 4 byte underlying array")
-	}
-	return *(*uint32)(unsafe.Pointer(&bytes[0]))
-}
-
-func bytes2ToUint16(bytes []byte) uint16 {
-	if cap(bytes) != 2 {
-		panic("no 2 byte underlying array")
-	}
-	return *(*uint16)(unsafe.Pointer(&bytes[0]))
-}
-
 type iphdr struct {
 	versionAndIhl uint8
 	tos           uint8
