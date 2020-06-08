@@ -218,7 +218,7 @@ func main() {
 	}
 
 	var buffer [1500]byte
-	timeout := time.After(1 * time.Second)
+	timeout := time.After(2 * time.Second)
 	for {
 		select {
 		case <-timeout:
