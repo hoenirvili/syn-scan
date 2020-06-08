@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -116,7 +117,7 @@ type tcphdr struct {
 	urp     uint16
 }
 
-func (t tcphdr) byte() []byte {
+func (t tcphdr) bytes() []byte {
 	payload := make([]byte, sizeTCPHdr, sizeTCPHdr)
 	arr := *(*[sizeTCPHdr]byte)(unsafe.Pointer(&t))
 	copy(payload, arr[:])
@@ -131,7 +132,7 @@ type pseudotcphdr struct {
 	length   uint16
 }
 
-func (p pseudotcphdr) byte() []byte {
+func (p pseudotcphdr) bytes() []byte {
 	const sz = unsafe.Sizeof(p)
 	payload := make([]byte, sz, sz)
 	arr := *(*[sz]byte)(unsafe.Pointer(&p))
@@ -156,8 +157,8 @@ func randomSynBytes(pseudo pseudotcphdr, port uint16) [sizeTCPHdr]byte {
 	}
 	const sz = sizePseudoTCPHdr + sizeTCPHdr
 	payloadSum := make([]byte, sz, sz)
-	payloadSum = append(payloadSum, pseudo.byte()...)
-	payloadSum = append(payloadSum, tcpheader.byte()...)
+	payloadSum = append(payloadSum, pseudo.bytes()...)
+	payloadSum = append(payloadSum, tcpheader.bytes()...)
 	payload := (*[sizeTCPHdr]byte)(unsafe.Pointer(&tcpheader))
 	tcpheader.sum = htons(checksum(payloadSum))
 	return *payload
@@ -217,38 +218,47 @@ func main() {
 	}
 
 	var buffer [1500]byte
+	timeout := time.After(1 * time.Second)
 	for {
-		n, sfrom, err := syscall.Recvfrom(sk, buffer[:], 0)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[!] Fail, cannot read from socket, %v\n", err)
-			os.Exit(1)
-		}
-		from, ok := sfrom.(*syscall.SockaddrInet4)
-		if !ok {
-			fmt.Fprintf(os.Stderr, "[!] Peer returned is not ipv4\n")
-			os.Exit(1)
-		}
-		if n < 0 {
-			fmt.Fprintf(os.Stderr, "[!] Received malformed packet\n")
-			continue
-		}
-		if from.Addr != to.Addr {
-			fmt.Println("[*] Not peer from packet..")
-			continue
-		}
-		// if we're dealing with a syn+ack or rast+ack
-		tcphdrp := buffer[sizeIPHDR : sizeIPHDR+sizeTCPHdr]
-		tcphdr := *(*tcphdr)(unsafe.Pointer(&tcphdrp[0]))
-		switch {
-		case tcphdr.flags&(syn|ack) == (syn | ack): // synAck
-			fmt.Println("[*] Service is open")
-			os.Exit(0)
-		case tcphdr.flags&(ack|rst) == (ack | rst): // rstAck
-			fmt.Println("[*] Serivce is closed")
+		select {
+		case <-timeout:
+			fmt.Println("[*] Service is filtered")
 			os.Exit(0)
 		default:
-			fmt.Fprintf(os.Stderr, "[*] Cannot scan target\n")
-			os.Exit(1)
+			n, sfrom, err := syscall.Recvfrom(sk, buffer[:], syscall.MSG_DONTWAIT)
+			if err != nil {
+				if err == syscall.EWOULDBLOCK || err == syscall.EAGAIN {
+					continue
+				}
+				fmt.Fprintf(os.Stderr, "[!] Fail, cannot read from socket, %v\n", err)
+				os.Exit(1)
+			}
+			from, ok := sfrom.(*syscall.SockaddrInet4)
+			if !ok {
+				fmt.Fprintf(os.Stderr, "[!] Peer returned is not ipv4\n")
+				os.Exit(1)
+			}
+			if n < 0 {
+				fmt.Fprintf(os.Stderr, "[!] Received malformed packet\n")
+				continue
+			}
+			if from.Addr != to.Addr {
+				continue
+			}
+			// if we're dealing with a syn+ack or rast+ack
+			tcphdrp := buffer[sizeIPHDR : sizeIPHDR+sizeTCPHdr]
+			tcphdr := *(*tcphdr)(unsafe.Pointer(&tcphdrp[0]))
+			switch {
+			case tcphdr.flags&(syn|ack) == (syn | ack): // synAck
+				fmt.Println("[*] Service is open")
+				os.Exit(0)
+			case tcphdr.flags&(ack|rst) == (ack | rst): // rstAck
+				fmt.Println("[*] Serivce is closed")
+				os.Exit(0)
+			default:
+				fmt.Fprintf(os.Stderr, "[*] Cannot scan target\n")
+				os.Exit(1)
+			}
 		}
 	}
 }
